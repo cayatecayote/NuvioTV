@@ -308,6 +308,95 @@ class StreamAutoPlaySelectorTest {
     }
 
     @Test
+    fun `first stream skips external link when its addon is not explicitly selected`() {
+        val external = stream(
+            addonName = "WatchHub",
+            name = "Amazon Prime Video",
+            externalUrl = "https://app.primevideo.com/detail?gti=abc"
+        )
+
+        val selected = StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = listOf(external),
+            mode = StreamAutoPlayMode.FIRST_STREAM,
+            regexPattern = "",
+            source = StreamAutoPlaySource.ALL_SOURCES,
+            installedAddonNames = setOf("WatchHub"),
+            selectedAddons = emptySet(),
+            selectedPlugins = emptySet()
+        )
+
+        assertNull(selected)
+    }
+
+    @Test
+    fun `first stream opens external link when its addon is explicitly selected`() {
+        val external = stream(
+            addonName = "WatchHub",
+            name = "Amazon Prime Video",
+            externalUrl = "https://app.primevideo.com/detail?gti=abc"
+        )
+
+        val selected = StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = listOf(external),
+            mode = StreamAutoPlayMode.FIRST_STREAM,
+            regexPattern = "",
+            source = StreamAutoPlaySource.INSTALLED_ADDONS_ONLY,
+            installedAddonNames = setOf("WatchHub", "Other"),
+            selectedAddons = setOf("WatchHub"),
+            selectedPlugins = emptySet()
+        )
+
+        assertEquals(external, selected)
+    }
+
+    @Test
+    fun `explicitly selected addon does not autoplay non web external links`() {
+        val placeholder = stream(
+            addonName = "WatchHub",
+            name = "Error",
+            externalUrl = "stremio:///detail/movie/tt123"
+        )
+
+        val selected = StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = listOf(placeholder),
+            mode = StreamAutoPlayMode.FIRST_STREAM,
+            regexPattern = "",
+            source = StreamAutoPlaySource.INSTALLED_ADDONS_ONLY,
+            installedAddonNames = setOf("WatchHub"),
+            selectedAddons = setOf("WatchHub"),
+            selectedPlugins = emptySet()
+        )
+
+        assertNull(selected)
+    }
+
+    @Test
+    fun `regex mode matches external link from explicitly selected addon`() {
+        val prime = stream(
+            addonName = "WatchHub",
+            name = "Amazon Prime Video",
+            externalUrl = "https://app.primevideo.com/detail?gti=abc"
+        )
+        val max = stream(
+            addonName = "WatchHub",
+            name = "HBO Max",
+            externalUrl = "https://play.max.com/show/abc"
+        )
+
+        val selected = StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = listOf(prime, max),
+            mode = StreamAutoPlayMode.REGEX_MATCH,
+            regexPattern = "HBO Max",
+            source = StreamAutoPlaySource.INSTALLED_ADDONS_ONLY,
+            installedAddonNames = setOf("WatchHub"),
+            selectedAddons = setOf("WatchHub"),
+            selectedPlugins = emptySet()
+        )
+
+        assertEquals(max, selected)
+    }
+
+    @Test
     fun `orderAddonStreams keeps cached local torrent groups in installed addon order`() {
         val regular = addonStreams(
             "AddonA",

@@ -55,6 +55,20 @@ object StreamAutoPlaySelector {
             (AppFeaturePolicy.inAppTrailerPlaybackEnabled && stream.youTubeIdToResolve() != null)
     }
 
+    /**
+     * Link-only addons (e.g. WatchHub) answer with web links that open the title in another
+     * app. They autoplay only when the user picked that addon by name for autoplay, and only
+     * for http(s) links, so placeholders like `stremio:///` never get opened on their own.
+     */
+    private fun isOptedInExternalLink(stream: Stream, selectedAddons: Set<String>): Boolean {
+        if (!stream.isExternal() || stream.addonName !in selectedAddons) return false
+        val link = stream.externalUrl?.trim().orEmpty()
+        return link.startsWith("https://", ignoreCase = true) || link.startsWith("http://", ignoreCase = true)
+    }
+
+    private fun isAutoPlayCandidate(stream: Stream, selectedAddons: Set<String>): Boolean =
+        isPlayable(stream) || isOptedInExternalLink(stream, selectedAddons)
+
 
 
     fun selectAutoPlayStream(
@@ -118,7 +132,7 @@ object StreamAutoPlaySelector {
 
         return when (mode) {
             StreamAutoPlayMode.MANUAL -> null
-            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull { isPlayable(it) }
+            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull { isAutoPlayCandidate(it, selectedAddons) }
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()
  
@@ -141,7 +155,7 @@ object StreamAutoPlaySelector {
 
                 // 1. Build list of ALL regex‑matching streams
                 val matchingStreams = candidateStreams.filter { stream ->
-                    if (!isPlayable(stream)) return@filter false
+                    if (!isAutoPlayCandidate(stream, selectedAddons)) return@filter false
 
                     val searchableText = buildString {
                         append(stream.addonName).append(' ')
@@ -164,7 +178,7 @@ object StreamAutoPlaySelector {
                 }
 
                 if (matchingStreams.isEmpty()) return null
-                matchingStreams.firstOrNull { isPlayable(it) }
+                matchingStreams.firstOrNull()
             }
 
         }
