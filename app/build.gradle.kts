@@ -223,6 +223,9 @@ android {
 
     buildTypes {
         debug {
+            // Local sideload build: installs next to the official app instead of replacing it.
+            applicationIdSuffix = ".juan"
+            versionNameSuffix = "-juan"
             signingConfig = signingConfigs.getByName("release")
             isDebuggable = parseBooleanProperty(providers.gradleProperty("debuggable").orNull)
             isMinifyEnabled = false
