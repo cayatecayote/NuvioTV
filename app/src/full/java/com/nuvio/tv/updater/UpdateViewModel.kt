@@ -73,7 +73,7 @@ class UpdateViewModel @Inject constructor(
             downloadStore.clearIfInstalled()
             consumeAutoInstalledUpdate()
             syncBackgroundJobs()
-            if (enabled && !BuildConfig.IS_DEBUG_BUILD) {
+            if (enabled) {
                 checkForUpdates(force = false, showNoUpdateFeedback = false)
             }
         }
@@ -107,7 +107,7 @@ class UpdateViewModel @Inject constructor(
                     val installedUpdate = _uiState.value.installedUpdate?.let { installed ->
                         if (installed.tag == update.tag) update else installed
                     }
-                    if (remoteNewer && downloadedFile == null && update.tag != dismissedTag && !BuildConfig.IS_DEBUG_BUILD) {
+                    if (remoteNewer && downloadedFile == null && update.tag != dismissedTag) {
                         UpdateJobService.scheduleCheckNow(context)
                     }
                     val shouldShow = UpdateBannerPolicy.shouldShow(
@@ -211,7 +211,7 @@ class UpdateViewModel @Inject constructor(
         viewModelScope.launch {
             updatePreferences.setUpdateBannerEnabled(enabled)
             syncBackgroundJobs()
-            if (enabled && changed && !BuildConfig.IS_DEBUG_BUILD) {
+            if (enabled && changed) {
                 checkForUpdates(force = false, showNoUpdateFeedback = false)
             }
         }
@@ -241,9 +241,7 @@ class UpdateViewModel @Inject constructor(
         viewModelScope.launch {
             downloadStore.clear()
             updatePreferences.setUpdateChannel(channel)
-            if (!BuildConfig.IS_DEBUG_BUILD) {
-                checkForUpdates(force = true, showNoUpdateFeedback = false)
-            }
+            checkForUpdates(force = true, showNoUpdateFeedback = false)
         }
     }
 
@@ -362,7 +360,6 @@ class UpdateViewModel @Inject constructor(
 
     // Background checks run while the banner or automatic installs are on; the idle install job only with the latter.
     private fun syncBackgroundJobs() {
-        if (BuildConfig.IS_DEBUG_BUILD) return
         val state = _uiState.value
         if (state.updateBannerEnabled || state.autoInstallEnabled) {
             UpdateJobService.schedulePeriodicCheck(context)

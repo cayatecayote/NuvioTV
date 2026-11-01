@@ -50,9 +50,14 @@ internal object VersionUtils {
             "(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
     )
 
+    // Nuvio Plus marks its builds with a trailing "-juan" (versionName) or "-plus" (release tag).
+    // It must not take part in precedence, otherwise "9-plus" vs "9-juan" compares as text and
+    // "10-juan" sorts below "9-juan".
+    private val plusMarker = Regex("-(?:juan|plus)$", RegexOption.IGNORE_CASE)
+
     fun normalize(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
-        return raw.trim().removePrefix("v").removePrefix("V")
+        return raw.trim().removePrefix("v").removePrefix("V").replace(plusMarker, "")
     }
 
     fun parse(raw: String?): SemanticVersion? {

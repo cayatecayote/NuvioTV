@@ -39,4 +39,21 @@ class VersionUtilsTest {
     fun `current beta naming is recognized as prerelease`() {
         assertTrue(VersionUtils.isPrerelease("0.8.12-beta"))
     }
+
+    @Test
+    fun `nuvio plus marker does not affect precedence`() {
+        // Same upstream version: the "-plus" release tag equals the "-juan" installed build.
+        assertFalse(VersionUtils.isRemoteNewer("1.1.0-beta.9-plus", "1.1.0-beta.9-juan"))
+        assertFalse(VersionUtils.isRemoteNewer("1.1.0-beta.9-juan", "1.1.0-beta.9-plus"))
+        // Newer upstream version is offered even though "10-plus" sorts below "9-juan" as text.
+        assertTrue(VersionUtils.isRemoteNewer("1.1.0-beta.10-plus", "1.1.0-beta.9-juan"))
+        assertTrue(VersionUtils.isRemoteNewer("1.1.0-plus", "1.1.0-beta.9-juan"))
+        assertFalse(VersionUtils.isRemoteNewer("1.1.0-beta.8-plus", "1.1.0-beta.9-juan"))
+    }
+
+    @Test
+    fun `nuvio plus marker keeps prerelease detection`() {
+        assertTrue(VersionUtils.isPrerelease("1.1.0-beta.9-juan"))
+        assertFalse(VersionUtils.isPrerelease("1.1.0-plus"))
+    }
 }
