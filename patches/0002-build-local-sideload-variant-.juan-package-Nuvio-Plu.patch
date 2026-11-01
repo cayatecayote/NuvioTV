@@ -1,0 +1,104 @@
+From a2b98fade18475821266e2fb7fb6112453507f50 Mon Sep 17 00:00:00 2001
+From: cayatecayote <juanemain@gmail.com>
+Date: Sat, 31 Oct 2026 14:20:07 -0300
+Subject: [PATCH 2/3] build: local sideload variant (.juan package, Nuvio Plus
+ label)
+
+---
+ app/build.gradle.kts                     |  3 +++
+ app/src/main/AndroidManifest.xml         | 14 +++++++-------
+ app/src/main/res/values/strings_juan.xml |  4 ++++
+ 3 files changed, 14 insertions(+), 7 deletions(-)
+ create mode 100644 app/src/main/res/values/strings_juan.xml
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 07d467ccb..1818beec3 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -223,6 +223,9 @@ android {
+ 
+     buildTypes {
+         debug {
++            // Local sideload build: installs next to the official app instead of replacing it.
++            applicationIdSuffix = ".juan"
++            versionNameSuffix = "-juan"
+             signingConfig = signingConfigs.getByName("release")
+             isDebuggable = parseBooleanProperty(providers.gradleProperty("debuggable").orNull)
+             isMinifyEnabled = false
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index df93d3b55..a46f44dee 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -36,7 +36,7 @@
+         android:allowBackup="false"
+         android:banner="@mipmap/banner"
+         android:icon="@mipmap/ic_launcher"
+-        android:label="@string/app_name"
++        android:label="@string/app_name_juan"
+         android:largeHeap="true"
+         android:extractNativeLibs="true"
+         android:usesCleartextTraffic="true"
+@@ -111,7 +111,7 @@
+             android:enabled="true"
+             android:exported="true"
+             android:icon="@mipmap/ic_launcher"
+-            android:label="@string/app_name"
++            android:label="@string/app_name_juan"
+             android:launchMode="singleTop"
+             android:theme="@style/Theme.MyApplication.Launcher">
+             <intent-filter>
+@@ -128,7 +128,7 @@
+             android:enabled="false"
+             android:exported="true"
+             android:icon="@mipmap/ic_launcher_arctic_blue"
+-            android:label="@string/app_name"
++            android:label="@string/app_name_juan"
+             android:launchMode="singleTop"
+             android:theme="@style/Theme.MyApplication.Launcher">
+             <intent-filter>
+@@ -145,7 +145,7 @@
+             android:enabled="false"
+             android:exported="true"
+             android:icon="@mipmap/ic_launcher_emerald"
+-            android:label="@string/app_name"
++            android:label="@string/app_name_juan"
+             android:launchMode="singleTop"
+             android:theme="@style/Theme.MyApplication.Launcher">
+             <intent-filter>
+@@ -162,7 +162,7 @@
+             android:enabled="false"
+             android:exported="true"
+             android:icon="@mipmap/ic_launcher_rose_gold"
+-            android:label="@string/app_name"
++            android:label="@string/app_name_juan"
+             android:launchMode="singleTop"
+             android:theme="@style/Theme.MyApplication.Launcher">
+             <intent-filter>
+@@ -179,7 +179,7 @@
+             android:enabled="false"
+             android:exported="true"
+             android:icon="@mipmap/ic_launcher_copper"
+-            android:label="@string/app_name"
++            android:label="@string/app_name_juan"
+             android:launchMode="singleTop"
+             android:theme="@style/Theme.MyApplication.Launcher">
+             <intent-filter>
+@@ -196,7 +196,7 @@
+             android:enabled="false"
+             android:exported="true"
+             android:icon="@mipmap/ic_launcher_graphite"
+-            android:label="@string/app_name"
++            android:label="@string/app_name_juan"
+             android:launchMode="singleTop"
+             android:theme="@style/Theme.MyApplication.Launcher">
+             <intent-filter>
+diff --git a/app/src/main/res/values/strings_juan.xml b/app/src/main/res/values/strings_juan.xml
+new file mode 100644
+index 000000000..315e4b6d4
+--- /dev/null
++++ b/app/src/main/res/values/strings_juan.xml
+@@ -0,0 +1,4 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="app_name_juan" translatable="false">Nuvio Plus</string>
++</resources>

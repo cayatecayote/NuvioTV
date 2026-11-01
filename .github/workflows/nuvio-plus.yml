@@ -1,0 +1,242 @@
+name: Nuvio Plus build
+
+# Builds Nuvio Plus (upstream NuvioTV + the patches in patches/) whenever upstream
+# publishes a new release, and publishes it as a release of this fork so the
+# in-app updater (GITHUB_OWNER=cayatecayote) picks it up.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Upstream tag to build (empty = newest upstream release)
+        required: false
+        type: string
+      force:
+        description: Rebuild and replace the Plus release even if it already exists
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: nuvio-plus
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: NuvioMedia/NuvioTV
+  # SHA-256 of the signing certificate of the installed app. A build signed with any
+  # other key would not install over it, so refuse to publish one.
+  EXPECTED_CERT_SHA256: a0aac2d82c6ba56dd618010b45febc054760999a879798348f80a0218c2a0ffb
+  EXPECTED_PACKAGE: com.nuviodebug.com
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      LOCAL_PROPERTIES_BASE64: ${{ secrets.LOCAL_PROPERTIES_BASE64 }}
+      LOCAL_DEV_PROPERTIES_BASE64: ${{ secrets.LOCAL_DEV_PROPERTIES_BASE64 }}
+      RELEASE_KEYSTORE_BASE64: ${{ secrets.NUVIO_RELEASE_KEYSTORE_BASE64 }}
+      NUVIO_RELEASE_KEY_ALIAS: ${{ secrets.NUVIO_RELEASE_KEY_ALIAS }}
+      NUVIO_RELEASE_KEY_PASSWORD: ${{ secrets.NUVIO_RELEASE_KEY_PASSWORD }}
+      NUVIO_RELEASE_STORE_PASSWORD: ${{ secrets.NUVIO_RELEASE_STORE_PASSWORD }}
+
+    steps:
+      - name: Check out Plus branch (workflow and patches)
+        uses: actions/checkout@v5
+
+      # GitHub disables scheduled workflows after 60 days without repository activity.
+      # Re-enabling ourselves on every run resets that timer.
+      - name: Keep schedule alive
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/nuvio-plus.yml/enable" || true
+
+      - name: Find newest upstream release
+        id: up
+        env:
+          INPUT_TAG: ${{ inputs.upstream_tag }}
+          INPUT_FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_TAG}" ]]; then
+            rel="$(gh api "repos/${UPSTREAM_REPO}/releases/tags/${INPUT_TAG}")"
+          else
+            rel="$(gh api "repos/${UPSTREAM_REPO}/releases?per_page=30" \
+              --jq '[.[] | select(.draft == false)] | sort_by(.published_at) | reverse | .[0]')"
+          fi
+          tag="$(jq -r '.tag_name' <<<"${rel}")"
+          prerelease="$(jq -r '.prerelease' <<<"${rel}")"
+          if [[ -z "${tag}" || "${tag}" == "null" ]]; then
+            echo "Could not determine the upstream release." >&2
+            exit 1
+          fi
+          plus_tag="${tag}-plus"
+          skip=false
+          if [[ "${INPUT_FORCE}" != "true" ]]; then
+            existing="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq "[.[] | select(.tag_name == \"${plus_tag}\" and .draft == false)] | length")"
+            if [[ "${existing}" != "0" ]]; then
+              skip=true
+            fi
+          fi
+          {
+            echo "tag=${tag}"
+            echo "plus_tag=${plus_tag}"
+            echo "prerelease=${prerelease}"
+            echo "skip=${skip}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Upstream: ${tag} (prerelease=${prerelease}); Plus tag: ${plus_tag}; skip=${skip}"
+
+      - name: Check out upstream at the release tag
+        if: steps.up.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.up.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --filter=blob:none --branch "${TAG}" \
+            "https://github.com/${UPSTREAM_REPO}.git" upstream
+          git -C upstream log -1 --format='Upstream commit %H'
+
+      - name: Apply Plus patches
+        id: patch
+        if: steps.up.outputs.skip != 'true'
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          git config user.name "Nuvio Plus CI"
+          git config user.email "ci@users.noreply.github.com"
+          if ! git am --3way ../patches/*.patch; then
+            git am --show-current-patch=diff 2>&1 | head -n 40 || true
+            git am --abort || true
+            echo "A Nuvio Plus patch no longer applies on top of this upstream release." >&2
+            exit 1
+          fi
+          git log --oneline -n 4
+
+      - name: Set up Java
+        if: steps.up.outputs.skip != 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        if: steps.up.outputs.skip != 'true'
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Write build configuration
+        if: steps.up.outputs.skip != 'true'
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          keystore_path="${RUNNER_TEMP}/nuvio-plus.jks"
+          printf '%s' "${RELEASE_KEYSTORE_BASE64}" | base64 --decode > "${keystore_path}"
+          printf '%s' "${LOCAL_PROPERTIES_BASE64}" | base64 --decode > local.properties
+          printf '%s' "${LOCAL_DEV_PROPERTIES_BASE64}" | base64 --decode > local.dev.properties
+          sed -i -E '/^[[:space:]]*(sdk\.dir|NUVIO_RELEASE_[A-Z_]+)[[:space:]]*=/d' local.properties
+          # The Gradle build reads these from the environment (see app/build.gradle.kts).
+          echo "NUVIO_RELEASE_STORE_FILE=${keystore_path}" >> "${GITHUB_ENV}"
+          test -s local.properties && test -s local.dev.properties && test -s "${keystore_path}"
+
+      - name: Unit tests (autoplay selector, updater)
+        if: steps.up.outputs.skip != 'true'
+        working-directory: upstream
+        run: >
+          ./gradlew :app:testFullDebugUnitTest
+          --tests 'com.nuvio.tv.core.player.StreamAutoPlaySelectorTest'
+          --tests 'com.nuvio.tv.updater.*'
+          --stacktrace
+
+      - name: Build full debug APKs
+        if: steps.up.outputs.skip != 'true'
+        working-directory: upstream
+        run: ./gradlew :app:assembleFullDebug --stacktrace
+
+      - name: Verify APKs (package and signing certificate)
+        if: steps.up.outputs.skip != 'true'
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          build_tools="$(ls -d "${ANDROID_HOME}"/build-tools/* | sort -V | tail -n 1)"
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/full/debug/*.apk)
+          if (( ${#apks[@]} == 0 )); then echo "No APKs produced." >&2; exit 1; fi
+          for apk in "${apks[@]}"; do
+            cert="$("${build_tools}/apksigner" verify --print-certs "${apk}" \
+              | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+            if [[ "${cert}" != "${EXPECTED_CERT_SHA256}" ]]; then
+              echo "Unexpected signing certificate on $(basename "${apk}")." >&2
+              exit 1
+            fi
+            badging="$("${build_tools}/aapt2" dump badging "${apk}" | head -n 1)"
+            echo "$(basename "${apk}"): ${badging%% platformBuild*}"
+            grep -q "name='${EXPECTED_PACKAGE}'" <<<"${badging}" \
+              || { echo "Unexpected package name." >&2; exit 1; }
+          done
+
+      - name: Publish release
+        id: publish
+        if: steps.up.outputs.skip != 'true'
+        working-directory: upstream
+        env:
+          TAG: ${{ steps.up.outputs.tag }}
+          PLUS_TAG: ${{ steps.up.outputs.plus_tag }}
+          UPSTREAM_PRERELEASE: ${{ steps.up.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          patch_count="$(ls ../patches/*.patch | wc -l)"
+          upstream_sha="$(git rev-parse "HEAD~${patch_count}")"
+          # Replace a previous Plus release of the same upstream tag (forced rebuild or leftover draft).
+          gh release delete "${PLUS_TAG}" --repo "${GITHUB_REPOSITORY}" --cleanup-tag --yes 2>/dev/null || true
+
+          {
+            echo "Nuvio Plus build of upstream [${TAG}](https://github.com/${UPSTREAM_REPO}/releases/tag/${TAG}) (${upstream_sha:0:9})."
+            echo
+            echo "Patches on top of upstream:"
+            git log --format='- %s' "HEAD~${patch_count}..HEAD"
+          } > "${RUNNER_TEMP}/notes.md"
+
+          flags=(--repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}"
+                 --title "Nuvio Plus ${TAG}" --notes-file "${RUNNER_TEMP}/notes.md" --draft)
+          if [[ "${UPSTREAM_PRERELEASE}" == "true" ]]; then flags+=(--prerelease); fi
+          gh release create "${PLUS_TAG}" "${flags[@]}" app/build/outputs/apk/full/debug/*.apk
+
+          # Only a complete release becomes visible to the updater.
+          if [[ "${UPSTREAM_PRERELEASE}" == "true" ]]; then
+            gh release edit "${PLUS_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --prerelease
+          else
+            gh release edit "${PLUS_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --prerelease=false --latest
+          fi
+          url="$(gh release view "${PLUS_TAG}" --repo "${GITHUB_REPOSITORY}" --json url --jq .url)"
+          echo "url=${url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Notify success
+        if: success() && steps.up.outputs.skip != 'true'
+        env:
+          MSG_TAG: ${{ steps.up.outputs.plus_tag }}
+          MSG_URL: ${{ steps.publish.outputs.url }}
+        run: |
+          ./scripts/notify.sh "Nuvio Plus ${MSG_TAG} published. ${MSG_URL}"
+
+      - name: Notify patch conflict
+        if: failure() && steps.patch.outcome == 'failure'
+        env:
+          MSG_TAG: ${{ steps.up.outputs.tag }}
+          MSG_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          ./scripts/notify.sh "Nuvio Plus: a patch does not apply on upstream ${MSG_TAG}. Nothing was published, the patches need a rebase. ${MSG_RUN}"
+
+      - name: Notify failure
+        if: failure() && steps.patch.outcome != 'failure'
+        env:
+          MSG_TAG: ${{ steps.up.outputs.tag }}
+          MSG_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          ./scripts/notify.sh "Nuvio Plus build failed (upstream ${MSG_TAG}). ${MSG_RUN}"

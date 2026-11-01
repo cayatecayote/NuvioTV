@@ -1,0 +1,126 @@
+From 604d16970ae3ce35dc8370e4f5f98df09748645b Mon Sep 17 00:00:00 2001
+From: cayatecayote <juanemain@gmail.com>
+Date: Sun, 1 Nov 2026 15:40:23 -0300
+Subject: [PATCH 3/3] feat(updater): check cayatecayote/NuvioTV releases,
+ ignore Nuvio Plus marker in version compare
+
+- GITHUB_OWNER points to the fork that publishes Nuvio Plus builds.
+- VersionUtils.normalize drops a trailing -juan/-plus marker so the installed
+  1.1.0-beta.9-juan equals release tag 1.1.0-beta.9-plus and beta.10 sorts above beta.9.
+- Re-enable update checks and background jobs in the (debug-built) sideload app.
+---
+ app/build.gradle.kts                            |  2 +-
+ .../com/nuvio/tv/updater/UpdateViewModel.kt     | 11 ++++-------
+ .../java/com/nuvio/tv/updater/VersionUtils.kt   |  7 ++++++-
+ .../com/nuvio/tv/updater/VersionUtilsTest.kt    | 17 +++++++++++++++++
+ 4 files changed, 28 insertions(+), 9 deletions(-)
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 1818beec3..36563e9dc 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -177,7 +177,7 @@ android {
+         buildConfigField("String", "SENTRY_DSN", buildConfigString(sentryDsn))
+ 
+         // In-app updater (GitHub Releases)
+-        buildConfigField("String", "GITHUB_OWNER", "\"NuvioMedia\"")
++        buildConfigField("String", "GITHUB_OWNER", "\"cayatecayote\"")
+         buildConfigField("String", "GITHUB_REPO", "\"NuvioTV\"")
+     }
+ 
+diff --git a/app/src/full/java/com/nuvio/tv/updater/UpdateViewModel.kt b/app/src/full/java/com/nuvio/tv/updater/UpdateViewModel.kt
+index 56b363c0f..a536b5dc0 100644
+--- a/app/src/full/java/com/nuvio/tv/updater/UpdateViewModel.kt
++++ b/app/src/full/java/com/nuvio/tv/updater/UpdateViewModel.kt
+@@ -73,7 +73,7 @@ class UpdateViewModel @Inject constructor(
+             downloadStore.clearIfInstalled()
+             consumeAutoInstalledUpdate()
+             syncBackgroundJobs()
+-            if (enabled && !BuildConfig.IS_DEBUG_BUILD) {
++            if (enabled) {
+                 checkForUpdates(force = false, showNoUpdateFeedback = false)
+             }
+         }
+@@ -107,7 +107,7 @@ class UpdateViewModel @Inject constructor(
+                     val installedUpdate = _uiState.value.installedUpdate?.let { installed ->
+                         if (installed.tag == update.tag) update else installed
+                     }
+-                    if (remoteNewer && downloadedFile == null && update.tag != dismissedTag && !BuildConfig.IS_DEBUG_BUILD) {
++                    if (remoteNewer && downloadedFile == null && update.tag != dismissedTag) {
+                         UpdateJobService.scheduleCheckNow(context)
+                     }
+                     val shouldShow = UpdateBannerPolicy.shouldShow(
+@@ -211,7 +211,7 @@ class UpdateViewModel @Inject constructor(
+         viewModelScope.launch {
+             updatePreferences.setUpdateBannerEnabled(enabled)
+             syncBackgroundJobs()
+-            if (enabled && changed && !BuildConfig.IS_DEBUG_BUILD) {
++            if (enabled && changed) {
+                 checkForUpdates(force = false, showNoUpdateFeedback = false)
+             }
+         }
+@@ -241,9 +241,7 @@ class UpdateViewModel @Inject constructor(
+         viewModelScope.launch {
+             downloadStore.clear()
+             updatePreferences.setUpdateChannel(channel)
+-            if (!BuildConfig.IS_DEBUG_BUILD) {
+-                checkForUpdates(force = true, showNoUpdateFeedback = false)
+-            }
++            checkForUpdates(force = true, showNoUpdateFeedback = false)
+         }
+     }
+ 
+@@ -362,7 +360,6 @@ class UpdateViewModel @Inject constructor(
+ 
+     // Background checks run while the banner or automatic installs are on; the idle install job only with the latter.
+     private fun syncBackgroundJobs() {
+-        if (BuildConfig.IS_DEBUG_BUILD) return
+         val state = _uiState.value
+         if (state.updateBannerEnabled || state.autoInstallEnabled) {
+             UpdateJobService.schedulePeriodicCheck(context)
+diff --git a/app/src/main/java/com/nuvio/tv/updater/VersionUtils.kt b/app/src/main/java/com/nuvio/tv/updater/VersionUtils.kt
+index 8dd8b212a..7bc39d8d6 100644
+--- a/app/src/main/java/com/nuvio/tv/updater/VersionUtils.kt
++++ b/app/src/main/java/com/nuvio/tv/updater/VersionUtils.kt
+@@ -50,9 +50,14 @@ internal object VersionUtils {
+             "(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+     )
+ 
++    // Nuvio Plus marks its builds with a trailing "-juan" (versionName) or "-plus" (release tag).
++    // It must not take part in precedence, otherwise "9-plus" vs "9-juan" compares as text and
++    // "10-juan" sorts below "9-juan".
++    private val plusMarker = Regex("-(?:juan|plus)$", RegexOption.IGNORE_CASE)
++
+     fun normalize(raw: String?): String {
+         if (raw.isNullOrBlank()) return ""
+-        return raw.trim().removePrefix("v").removePrefix("V")
++        return raw.trim().removePrefix("v").removePrefix("V").replace(plusMarker, "")
+     }
+ 
+     fun parse(raw: String?): SemanticVersion? {
+diff --git a/app/src/test/java/com/nuvio/tv/updater/VersionUtilsTest.kt b/app/src/test/java/com/nuvio/tv/updater/VersionUtilsTest.kt
+index 02e9d445c..d9f7516ef 100644
+--- a/app/src/test/java/com/nuvio/tv/updater/VersionUtilsTest.kt
++++ b/app/src/test/java/com/nuvio/tv/updater/VersionUtilsTest.kt
+@@ -39,4 +39,21 @@ class VersionUtilsTest {
+     fun `current beta naming is recognized as prerelease`() {
+         assertTrue(VersionUtils.isPrerelease("0.8.12-beta"))
+     }
++
++    @Test
++    fun `nuvio plus marker does not affect precedence`() {
++        // Same upstream version: the "-plus" release tag equals the "-juan" installed build.
++        assertFalse(VersionUtils.isRemoteNewer("1.1.0-beta.9-plus", "1.1.0-beta.9-juan"))
++        assertFalse(VersionUtils.isRemoteNewer("1.1.0-beta.9-juan", "1.1.0-beta.9-plus"))
++        // Newer upstream version is offered even though "10-plus" sorts below "9-juan" as text.
++        assertTrue(VersionUtils.isRemoteNewer("1.1.0-beta.10-plus", "1.1.0-beta.9-juan"))
++        assertTrue(VersionUtils.isRemoteNewer("1.1.0-plus", "1.1.0-beta.9-juan"))
++        assertFalse(VersionUtils.isRemoteNewer("1.1.0-beta.8-plus", "1.1.0-beta.9-juan"))
++    }
++
++    @Test
++    fun `nuvio plus marker keeps prerelease detection`() {
++        assertTrue(VersionUtils.isPrerelease("1.1.0-beta.9-juan"))
++        assertFalse(VersionUtils.isPrerelease("1.1.0-plus"))
++    }
+ }
