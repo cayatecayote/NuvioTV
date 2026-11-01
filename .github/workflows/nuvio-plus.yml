@@ -172,7 +172,8 @@ jobs:
             cert="$("${build_tools}/apksigner" verify --print-certs "${apk}" \
               | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
             if [[ "${cert}" != "${EXPECTED_CERT_SHA256}" ]]; then
-              echo "Unexpected signing certificate on $(basename "${apk}")." >&2
+              echo "Unexpected signing certificate on $(basename "${apk}"): '${cert}'" >&2
+              "${build_tools}/apksigner" verify --print-certs "${apk}" | head -n 4 >&2
               exit 1
             fi
             badging="$("${build_tools}/aapt2" dump badging "${apk}" | head -n 1)"
@@ -223,7 +224,7 @@ jobs:
           MSG_TAG: ${{ steps.up.outputs.plus_tag }}
           MSG_URL: ${{ steps.publish.outputs.url }}
         run: |
-          ./scripts/notify.sh "Nuvio Plus ${MSG_TAG} published. ${MSG_URL}"
+          bash scripts/notify.sh "Nuvio Plus ${MSG_TAG} published. ${MSG_URL}"
 
       - name: Notify patch conflict
         if: failure() && steps.patch.outcome == 'failure'
@@ -231,7 +232,7 @@ jobs:
           MSG_TAG: ${{ steps.up.outputs.tag }}
           MSG_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          ./scripts/notify.sh "Nuvio Plus: a patch does not apply on upstream ${MSG_TAG}. Nothing was published, the patches need a rebase. ${MSG_RUN}"
+          bash scripts/notify.sh "Nuvio Plus: a patch does not apply on upstream ${MSG_TAG}. Nothing was published, the patches need a rebase. ${MSG_RUN}"
 
       - name: Notify failure
         if: failure() && steps.patch.outcome != 'failure'
@@ -239,4 +240,4 @@ jobs:
           MSG_TAG: ${{ steps.up.outputs.tag }}
           MSG_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          ./scripts/notify.sh "Nuvio Plus build failed (upstream ${MSG_TAG}). ${MSG_RUN}"
+          bash scripts/notify.sh "Nuvio Plus build failed (upstream ${MSG_TAG}). ${MSG_RUN}"
