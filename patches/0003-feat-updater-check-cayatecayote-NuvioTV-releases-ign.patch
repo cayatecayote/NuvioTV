@@ -1,4 +1,4 @@
-From 604d16970ae3ce35dc8370e4f5f98df09748645b Mon Sep 17 00:00:00 2001
+From 785271a0e6f57fb9ae17ed98cd5c5e0ff96b92dd Mon Sep 17 00:00:00 2001
 From: cayatecayote <juanemain@gmail.com>
 Date: Sun, 1 Nov 2026 15:40:23 -0300
 Subject: [PATCH 3/3] feat(updater): check cayatecayote/NuvioTV releases,
@@ -16,7 +16,7 @@ Subject: [PATCH 3/3] feat(updater): check cayatecayote/NuvioTV releases,
  4 files changed, 28 insertions(+), 9 deletions(-)
 
 diff --git a/app/build.gradle.kts b/app/build.gradle.kts
-index 1818beec3..36563e9dc 100644
+index d19213134..3ecbbf464 100644
 --- a/app/build.gradle.kts
 +++ b/app/build.gradle.kts
 @@ -177,7 +177,7 @@ android {
@@ -124,3 +124,6 @@ index 02e9d445c..d9f7516ef 100644
 +        assertFalse(VersionUtils.isPrerelease("1.1.0-plus"))
 +    }
  }
+-- 
+2.53.0.windows.1
+

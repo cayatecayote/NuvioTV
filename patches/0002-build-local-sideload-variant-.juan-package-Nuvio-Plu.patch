@@ -1,4 +1,4 @@
-From a2b98fade18475821266e2fb7fb6112453507f50 Mon Sep 17 00:00:00 2001
+From 5e69b8a733a2aac424f685e5cd6bfa199f3d8ea8 Mon Sep 17 00:00:00 2001
 From: cayatecayote <juanemain@gmail.com>
 Date: Sat, 31 Oct 2026 14:20:07 -0300
 Subject: [PATCH 2/3] build: local sideload variant (.juan package, Nuvio Plus
@@ -12,7 +12,7 @@ Subject: [PATCH 2/3] build: local sideload variant (.juan package, Nuvio Plus
  create mode 100644 app/src/main/res/values/strings_juan.xml
 
 diff --git a/app/build.gradle.kts b/app/build.gradle.kts
-index 07d467ccb..1818beec3 100644
+index de6e2f933..d19213134 100644
 --- a/app/build.gradle.kts
 +++ b/app/build.gradle.kts
 @@ -223,6 +223,9 @@ android {
@@ -102,3 +102,6 @@ index 000000000..315e4b6d4
 +<resources>
 +    <string name="app_name_juan" translatable="false">Nuvio Plus</string>
 +</resources>
+-- 
+2.53.0.windows.1
+
